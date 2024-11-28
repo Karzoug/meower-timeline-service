@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"time"
 
@@ -12,7 +13,11 @@ import (
 
 	"github.com/Karzoug/meower-timeline-service/internal/config"
 	grpcServer "github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/server"
-	"github.com/Karzoug/meower-timeline-service/internal/delivery/kafka"
+	inkafka "github.com/Karzoug/meower-timeline-service/internal/delivery/kafka"
+	"github.com/Karzoug/meower-timeline-service/internal/timeline/client/grpc/post"
+	"github.com/Karzoug/meower-timeline-service/internal/timeline/client/grpc/relation"
+	outkafka "github.com/Karzoug/meower-timeline-service/internal/timeline/client/kafka"
+	tmlnRepo "github.com/Karzoug/meower-timeline-service/internal/timeline/repo/redis"
 	"github.com/Karzoug/meower-timeline-service/internal/timeline/service"
 	"github.com/Karzoug/meower-timeline-service/pkg/buildinfo"
 	"github.com/Karzoug/meower-timeline-service/pkg/metric/prom"
@@ -65,9 +70,27 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 		return err
 	}
 	defer doClose(shutdownMeter, logger)
+	// set up post microservice grpc client
+	pclient, err := post.NewServiceClient(cfg.PostService)
+	if err != nil {
+		return fmt.Errorf("could not connect to post microservice: %w", err)
+	}
+
+	// set up relation microservice grpc client
+	rclient, err := relation.NewServiceClient(cfg.RelationService)
+	if err != nil {
+		return fmt.Errorf("could not connect to relation microservice: %w", err)
+	}
+
+	// set up kafka producer
+	tp, shutdownKafkaProducer, err := outkafka.NewProducer(ctxInit, cfg.ProducerKafka)
+	if err != nil {
+		return err
+	}
+	defer doClose(shutdownKafkaProducer, logger)
 
 	// set up service
-	ts := service.NewTimelineService(logger)
+	ts, err := service.NewTimelineService(cfg.Service, repo, pclient, rclient, tp, ctx.Done(), logger)
 	if err != nil {
 		return err
 	}
@@ -81,7 +104,7 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 	)
 
 	// set up kafka consumer
-	uc, err := kafka.NewConsumer(ctxInit, cfg.Kafka, ts, logger)
+	uc, err := inkafka.NewConsumer(ctxInit, cfg.ConsumerKafka, ts, logger)
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,6 @@
 package entity
 
-type TimelineRecord struct {
+type Post struct {
 	AuthorID string
 	PostID   string
 	IsRepost bool
