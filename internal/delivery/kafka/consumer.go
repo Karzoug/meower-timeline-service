@@ -132,8 +132,7 @@ func (c consumer) Run(ctx context.Context) (err error) {
 				Ctx(ctx).
 				Logger()
 
-			switch eventTypeFngpnt {
-			case changeTaskEventFngpnt:
+			if eventTypeFngpnt == changeTaskEventFngpnt {
 				err = c.handler(ctx, msg, hlogger)
 			}
 

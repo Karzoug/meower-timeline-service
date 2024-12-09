@@ -34,32 +34,38 @@ func (c consumer) handler(ctx context.Context, msg *kafka.Message, logger zerolo
 		return fmt.Errorf("failed to deserialize payload: %w", err)
 	}
 
-	var (
-		spanMethodName = preffixSpanName
-		operation      func() error
-	)
+	spanMethodName := preffixSpanName
 	switch event.ChangeType {
 	case timelineApi.ChangeTaskType_CHANGE_TASK_TYPE_POST_INSERT:
 		spanMethodName += "postInsert"
-		operation = c.buildPostInsertOperation(ctx, event, logger)
 	case timelineApi.ChangeTaskType_CHANGE_TASK_TYPE_POST_DELETE:
 		spanMethodName += "postDelete"
-		operation = c.buildPostDeleteOperation(ctx, event, logger)
 	case timelineApi.ChangeTaskType_CHANGE_TASK_TYPE_USER_DELETE:
 		spanMethodName += "userDelete"
-		operation = c.buildUserDeleteOperation(ctx, event, logger)
 	case timelineApi.ChangeTaskType_CHANGE_TASK_TYPE_USER_SUBSCRIBE:
 		spanMethodName += "userSubscribe"
-		operation = c.buildUserSubscribeOperation(ctx, event, logger)
 	case timelineApi.ChangeTaskType_CHANGE_TASK_TYPE_USER_UNSUBSCRIBE:
 		spanMethodName += "userUnsubscribe"
-		operation = c.buildUserUnsubscribeOperation(ctx, event, logger)
 	default:
 		return nil
 	}
 
 	ctx, span := c.tracer.Start(ctx, spanMethodName)
 	defer span.End()
+
+	var operation func() error
+	switch event.ChangeType {
+	case timelineApi.ChangeTaskType_CHANGE_TASK_TYPE_POST_INSERT:
+		operation = c.buildPostInsertOperation(ctx, event, logger)
+	case timelineApi.ChangeTaskType_CHANGE_TASK_TYPE_POST_DELETE:
+		operation = c.buildPostDeleteOperation(ctx, event, logger)
+	case timelineApi.ChangeTaskType_CHANGE_TASK_TYPE_USER_DELETE:
+		operation = c.buildUserDeleteOperation(ctx, event, logger)
+	case timelineApi.ChangeTaskType_CHANGE_TASK_TYPE_USER_SUBSCRIBE:
+		operation = c.buildUserSubscribeOperation(ctx, event, logger)
+	case timelineApi.ChangeTaskType_CHANGE_TASK_TYPE_USER_UNSUBSCRIBE:
+		operation = c.buildUserUnsubscribeOperation(ctx, event, logger)
+	}
 
 	if err := backoff.Retry(operation,
 		backoff.NewExponentialBackOff(
@@ -83,36 +89,36 @@ func (c consumer) buildPostInsertOperation(ctx context.Context, event *timelineA
 		ctx, cancel := context.WithTimeout(ctx, defaultOperationTimeout)
 		defer cancel()
 
-		targetUserId, err := xid.FromString(event.TargetUserId)
+		targetUserID, err := xid.FromString(event.TargetUserId)
 		if err != nil {
 			return backoff.Permanent(fmt.Errorf("%s: invalid target user id: %w", op, err))
 		}
-		userId, err := xid.FromString(event.UserId)
+		userID, err := xid.FromString(event.UserId)
 		if err != nil {
 			return backoff.Permanent(fmt.Errorf("%s: invalid user id: %w", op, err))
 		}
-		postId, err := xid.FromString(event.PostId)
+		postID, err := xid.FromString(event.PostId)
 		if err != nil {
 			return backoff.Permanent(fmt.Errorf("%s: invalid post id: %w", op, err))
 		}
 
 		if err := c.timelineService.PushTimelinePost(ctx,
-			targetUserId,
+			targetUserID,
 			entity.Post{
-				AuthorID: userId,
-				PostID:   postId,
+				AuthorID: userID,
+				PostID:   postID,
 			}); err != nil {
 			var serr ucerr.Error
 			if errors.As(err, &serr) {
 				logger.Warn().
 					Str("target_user_id", event.TargetUserId).
-					Str("post_id", postId.String()).
+					Str("post_id", postID.String()).
 					Err(serr.Unwrap()).
 					Msg("push post to timeline failed")
 			} else {
 				logger.Warn().
 					Str("target_user_id", event.TargetUserId).
-					Str("post_id", postId.String()).
+					Str("post_id", postID.String()).
 					Err(err).
 					Msg("push post to timeline failed")
 			}
@@ -216,12 +222,12 @@ func (c consumer) buildUserSubscribeOperation(ctx context.Context, event *timeli
 		if err != nil {
 			return backoff.Permanent(fmt.Errorf("%s: invalid user id: %w", op, err))
 		}
-		targetUserId, err := xid.FromString(event.TargetUserId)
+		targetUserID, err := xid.FromString(event.TargetUserId)
 		if err != nil {
 			return backoff.Permanent(fmt.Errorf("%s: invalid target user id: %w", op, err))
 		}
 
-		if err := c.timelineService.SubscribeOnUser(ctx, userID, targetUserId); err != nil {
+		if err := c.timelineService.SubscribeOnUser(ctx, userID, targetUserID); err != nil {
 			var serr ucerr.Error
 			if errors.As(err, &serr) {
 				logger.Warn().
@@ -255,12 +261,12 @@ func (c consumer) buildUserUnsubscribeOperation(ctx context.Context, event *time
 		if err != nil {
 			return backoff.Permanent(fmt.Errorf("%s: invalid user id: %w", op, err))
 		}
-		targetUserId, err := xid.FromString(event.TargetUserId)
+		targetUserID, err := xid.FromString(event.TargetUserId)
 		if err != nil {
 			return backoff.Permanent(fmt.Errorf("%s: invalid target user id: %w", op, err))
 		}
 
-		if err := c.timelineService.UnsubscribeFromUser(ctx, userID, targetUserId); err != nil {
+		if err := c.timelineService.UnsubscribeFromUser(ctx, userID, targetUserID); err != nil {
 			var serr ucerr.Error
 			if errors.As(err, &serr) {
 				logger.Warn().

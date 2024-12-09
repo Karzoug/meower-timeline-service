@@ -2,14 +2,11 @@ package service
 
 import (
 	"context"
-	"time"
 
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/singleflight"
 )
-
-const defaultTimeout = 5 * time.Second
 
 type TimelineService struct {
 	repo repo

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"time"
 
@@ -18,6 +19,8 @@ import (
 	timelineHandler "github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/handler/timeline"
 	grpcServer "github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/server"
 	"github.com/Karzoug/meower-timeline-service/internal/delivery/kafka"
+	"github.com/Karzoug/meower-timeline-service/internal/timeline/client/grpc/post"
+	"github.com/Karzoug/meower-timeline-service/internal/timeline/client/grpc/relation"
 	repo "github.com/Karzoug/meower-timeline-service/internal/timeline/repo/redis"
 	"github.com/Karzoug/meower-timeline-service/internal/timeline/service"
 	"github.com/Karzoug/meower-timeline-service/pkg/buildinfo"
@@ -64,12 +67,6 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 
 	tracer := otel.GetTracerProvider().Tracer(pkgName)
 
-	redisDB, err := redis.NewDB(ctxInit, cfg.Redis)
-	if err != nil {
-		return err
-	}
-	defer doClose(redisDB.Close, logger)
-
 	// set up meter
 	shutdownMeter, err := prom.RegisterGlobal(ctxInit, serviceName, serviceVersion, metricNamespace)
 	if err != nil {
@@ -77,8 +74,26 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 	}
 	defer doClose(shutdownMeter, logger)
 
+	redisDB, err := redis.NewDB(ctxInit, cfg.Redis)
+	if err != nil {
+		return err
+	}
+	defer doClose(redisDB.Close, logger)
+
+	// set up post microservice grpc client
+	postClient, err := post.NewServiceClient(cfg.PostService)
+	if err != nil {
+		return fmt.Errorf("could not connect to post microservice: %w", err)
+	}
+
+	// set up relation microservice grpc client
+	relationClient, err := relation.NewServiceClient(cfg.RelationService)
+	if err != nil {
+		return fmt.Errorf("could not connect to relation microservice: %w", err)
+	}
+
 	// set up service
-	ts, err := service.NewTimelineService(cfg.Service, repo.NewTimelineRepo(redisDB, logger), nil, nil, ctx.Done(), tracer, logger)
+	ts, err := service.NewTimelineService(cfg.Service, repo.NewTimelineRepo(redisDB, logger), relationClient, postClient, ctx.Done(), tracer, logger)
 	if err != nil {
 		return err
 	}

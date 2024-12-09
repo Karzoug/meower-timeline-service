@@ -77,7 +77,7 @@ func (ts TimelineService) getTimelineFromScratch(userID xid.ID) ([]entity.Post, 
 	ctx, cancel := context.WithTimeout(ts.shutdownCtx, ts.cfg.BuildTimeout)
 	defer cancel()
 
-	ctx, span := ts.tracer.Start(ts.shutdownCtx, preffixSpanName+"BuildTimelineFromScratch")
+	ctx, span := ts.tracer.Start(ctx, preffixSpanName+"BuildTimelineFromScratch")
 	defer span.End()
 
 	res := ts.buildTimelineFromScratch(ctx, userID)
@@ -91,7 +91,7 @@ func (ts TimelineService) getTimelineFromScratch(userID xid.ID) ([]entity.Post, 
 			return nil, ucerr.NewInternalError(fmt.Errorf("invalid type assertion: want []entity.Post, got %T", r.Val))
 		}
 
-		if err := ts.set(ctx, userID, res); err != nil {
+		if err := ts.repo.ListSet(ctx, userID, res, ts.cfg.TTL); err != nil {
 			ts.logger.Error().
 				Err(err).
 				Msg("failed to set timeline")
@@ -134,15 +134,4 @@ func (ts TimelineService) buildTimelineFromScratch(ctx context.Context, userID x
 
 		return posts, nil
 	})
-}
-
-func (ts TimelineService) set(ctx context.Context, userID xid.ID, records []entity.Post) error {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-
-	if err := ts.repo.ListSet(ctx, userID, records, ts.cfg.TTL); err != nil {
-		return err
-	}
-
-	return nil
 }

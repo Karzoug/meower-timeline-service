@@ -23,7 +23,7 @@ func Test_repo_ExistedListDeletePost(t *testing.T) {
 
 	redisContainer, err := rc.Run(ctx, "redis:6")
 	require.NoError(t, err)
-	defer redisContainer.Terminate(context.TODO())
+	defer redisContainer.Terminate(context.TODO()) //nolint:errcheck
 
 	url, err := redisContainer.ConnectionString(ctx)
 	require.NoError(t, err)
