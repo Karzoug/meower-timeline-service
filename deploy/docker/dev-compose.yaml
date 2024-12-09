@@ -62,6 +62,7 @@ services:
     environment:
       CONSUMER_KAFKA_BROKERS: kafka:9092
       REDIS_ADDRS: redis:6379
+      REDIS_ENABLE_TRACING: true
       POST_SERVICE_URI: post-service:3001
       RELATION_SERVICE_URI: relation-service:3002
       OTLP_PROBABILITY: 1

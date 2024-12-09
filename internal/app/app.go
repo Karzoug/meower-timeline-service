@@ -18,8 +18,10 @@ import (
 	timelineHandler "github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/handler/timeline"
 	grpcServer "github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/server"
 	"github.com/Karzoug/meower-timeline-service/internal/delivery/kafka"
+	repo "github.com/Karzoug/meower-timeline-service/internal/timeline/repo/redis"
 	"github.com/Karzoug/meower-timeline-service/internal/timeline/service"
 	"github.com/Karzoug/meower-timeline-service/pkg/buildinfo"
+	"github.com/Karzoug/meower-timeline-service/pkg/redis"
 )
 
 const (
@@ -62,6 +64,12 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 
 	tracer := otel.GetTracerProvider().Tracer(pkgName)
 
+	redisDB, err := redis.NewDB(ctxInit, cfg.Redis)
+	if err != nil {
+		return err
+	}
+	defer doClose(redisDB.Close, logger)
+
 	// set up meter
 	shutdownMeter, err := prom.RegisterGlobal(ctxInit, serviceName, serviceVersion, metricNamespace)
 	if err != nil {
@@ -70,7 +78,7 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 	defer doClose(shutdownMeter, logger)
 
 	// set up service
-	ts, err := service.NewTimelineService(cfg.Service, nil, nil, nil, ctx.Done(), tracer, logger)
+	ts, err := service.NewTimelineService(cfg.Service, repo.NewTimelineRepo(redisDB, logger), nil, nil, ctx.Done(), tracer, logger)
 	if err != nil {
 		return err
 	}

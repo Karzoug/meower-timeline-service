@@ -7,6 +7,7 @@ import (
 	grpcConfig "github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/server"
 	"github.com/Karzoug/meower-timeline-service/internal/delivery/kafka"
 	"github.com/Karzoug/meower-timeline-service/internal/timeline/service"
+	"github.com/Karzoug/meower-timeline-service/pkg/redis"
 
 	"github.com/rs/zerolog"
 )
@@ -18,4 +19,5 @@ type Config struct {
 	OTLP          otlp.Config       `envPrefix:"OTLP_"`
 	ConsumerKafka kafka.Config      `envPrefix:"CONSUMER_KAFKA_"`
 	Service       service.Config    `envPrefix:"SERVICE_"`
+	Redis         redis.Config      `envPrefix:"REDIS_"`
 }
