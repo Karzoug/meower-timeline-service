@@ -17,6 +17,7 @@ import (
 	healthHandler "github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/handler/health"
 	timelineHandler "github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/handler/timeline"
 	grpcServer "github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/server"
+	"github.com/Karzoug/meower-timeline-service/internal/delivery/kafka"
 	"github.com/Karzoug/meower-timeline-service/internal/timeline/service"
 	"github.com/Karzoug/meower-timeline-service/pkg/buildinfo"
 )
@@ -74,6 +75,12 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 		return err
 	}
 
+	// set up kafka producer
+	kafkaConsumer, err := kafka.NewConsumer(ctxInit, cfg.ConsumerKafka, ts, tracer, logger)
+	if err != nil {
+		return err
+	}
+
 	// set up grpc server
 	grpcSrv := grpcServer.New(
 		cfg.GRPC,
@@ -89,6 +96,10 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 	// run service grpc server
 	eg.Go(func() error {
 		return grpcSrv.Run(ctx)
+	})
+	// run kafka consumer
+	eg.Go(func() error {
+		return kafkaConsumer.Run(ctx)
 	})
 	// run prometheus metrics http server
 	eg.Go(func() error {
