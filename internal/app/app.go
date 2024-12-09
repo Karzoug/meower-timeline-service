@@ -15,7 +15,9 @@ import (
 
 	"github.com/Karzoug/meower-timeline-service/internal/config"
 	healthHandler "github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/handler/health"
+	timelineHandler "github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/handler/timeline"
 	grpcServer "github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/server"
+	"github.com/Karzoug/meower-timeline-service/internal/timeline/service"
 	"github.com/Karzoug/meower-timeline-service/pkg/buildinfo"
 )
 
@@ -66,11 +68,18 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 	}
 	defer doClose(shutdownMeter, logger)
 
+	// set up service
+	ts, err := service.NewTimelineService(tracer, logger)
+	if err != nil {
+		return err
+	}
+
 	// set up grpc server
 	grpcSrv := grpcServer.New(
 		cfg.GRPC,
 		[]grpcServer.ServiceRegister{
 			healthHandler.RegisterService(),
+			timelineHandler.RegisterService(ts),
 		},
 		tracer,
 		logger,
