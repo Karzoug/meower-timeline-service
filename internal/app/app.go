@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"time"
 
@@ -15,8 +16,15 @@ import (
 
 	"github.com/Karzoug/meower-timeline-service/internal/config"
 	healthHandler "github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/handler/health"
+	timelineHandler "github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/handler/timeline"
 	grpcServer "github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/server"
+	"github.com/Karzoug/meower-timeline-service/internal/delivery/kafka"
+	"github.com/Karzoug/meower-timeline-service/internal/timeline/client/grpc/post"
+	"github.com/Karzoug/meower-timeline-service/internal/timeline/client/grpc/relation"
+	repo "github.com/Karzoug/meower-timeline-service/internal/timeline/repo/redis"
+	"github.com/Karzoug/meower-timeline-service/internal/timeline/service"
 	"github.com/Karzoug/meower-timeline-service/pkg/buildinfo"
+	"github.com/Karzoug/meower-timeline-service/pkg/redis"
 )
 
 const (
@@ -66,11 +74,42 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 	}
 	defer doClose(shutdownMeter, logger)
 
+	redisDB, err := redis.NewDB(ctxInit, cfg.Redis)
+	if err != nil {
+		return err
+	}
+	defer doClose(redisDB.Close, logger)
+
+	// set up post microservice grpc client
+	postClient, err := post.NewServiceClient(cfg.PostService)
+	if err != nil {
+		return fmt.Errorf("could not connect to post microservice: %w", err)
+	}
+
+	// set up relation microservice grpc client
+	relationClient, err := relation.NewServiceClient(cfg.RelationService)
+	if err != nil {
+		return fmt.Errorf("could not connect to relation microservice: %w", err)
+	}
+
+	// set up service
+	ts, err := service.NewTimelineService(cfg.Service, repo.NewTimelineRepo(redisDB, logger), relationClient, postClient, ctx.Done(), tracer, logger)
+	if err != nil {
+		return err
+	}
+
+	// set up kafka producer
+	kafkaConsumer, err := kafka.NewConsumer(ctxInit, cfg.ConsumerKafka, ts, tracer, logger)
+	if err != nil {
+		return err
+	}
+
 	// set up grpc server
 	grpcSrv := grpcServer.New(
 		cfg.GRPC,
 		[]grpcServer.ServiceRegister{
 			healthHandler.RegisterService(),
+			timelineHandler.RegisterService(ts),
 		},
 		tracer,
 		logger,
@@ -80,6 +119,10 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 	// run service grpc server
 	eg.Go(func() error {
 		return grpcSrv.Run(ctx)
+	})
+	// run kafka consumer
+	eg.Go(func() error {
+		return kafkaConsumer.Run(ctx)
 	})
 	// run prometheus metrics http server
 	eg.Go(func() error {

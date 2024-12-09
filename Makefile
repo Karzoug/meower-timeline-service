@@ -96,7 +96,8 @@ build:
 ## generate: generate all necessary code
 .PHONY: generate
 generate:
-	$(TEMP_BIN)/buf generate
+	$(TEMP_BIN)/buf generate --template buf.gen.grpc.yaml
+	$(TEMP_BIN)/buf generate --template buf.gen.kafka.yaml
 
 ## clean: clean all temporary files
 .PHONY: clean
