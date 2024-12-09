@@ -1,29 +1,53 @@
 package service
 
 import (
+	"context"
 	"time"
 
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/singleflight"
 )
 
 const defaultTimeout = 5 * time.Second
 
 type TimelineService struct {
-	tracer trace.Tracer
-	logger zerolog.Logger
+	repo repo
+	relationService
+	postService
+	cfg         Config
+	shutdownCtx context.Context // for background workers
+	syncGroup   *singleflight.Group
+	tracer      trace.Tracer
+	logger      zerolog.Logger
 }
 
-func NewTimelineService(
+func NewTimelineService(cfg Config,
+	repo repo,
+	relationService relationService,
+	postService postService,
+	closeChan <-chan struct{},
 	tracer trace.Tracer,
 	logger zerolog.Logger,
 ) (TimelineService, error) {
 	logger = logger.With().
-		Str("component", "user service").
+		Str("component", "timeline service").
 		Logger()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-closeChan
+		cancel()
+	}()
+
 	return TimelineService{
-		tracer: tracer,
-		logger: logger,
+		cfg:             cfg,
+		repo:            repo,
+		relationService: relationService,
+		postService:     postService,
+		syncGroup:       new(singleflight.Group),
+		shutdownCtx:     ctx,
+		tracer:          tracer,
+		logger:          logger,
 	}, nil
 }

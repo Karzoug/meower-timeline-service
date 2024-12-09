@@ -6,6 +6,7 @@ import (
 
 	grpcConfig "github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/server"
 	"github.com/Karzoug/meower-timeline-service/internal/delivery/kafka"
+	"github.com/Karzoug/meower-timeline-service/internal/timeline/service"
 
 	"github.com/rs/zerolog"
 )
@@ -16,4 +17,5 @@ type Config struct {
 	PromHTTP      prom.ServerConfig `envPrefix:"PROM_"`
 	OTLP          otlp.Config       `envPrefix:"OTLP_"`
 	ConsumerKafka kafka.Config      `envPrefix:"CONSUMER_KAFKA_"`
+	Service       service.Config    `envPrefix:"SERVICE_"`
 }

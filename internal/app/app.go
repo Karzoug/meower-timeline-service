@@ -70,7 +70,7 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 	defer doClose(shutdownMeter, logger)
 
 	// set up service
-	ts, err := service.NewTimelineService(tracer, logger)
+	ts, err := service.NewTimelineService(cfg.Service, nil, nil, nil, ctx.Done(), tracer, logger)
 	if err != nil {
 		return err
 	}
