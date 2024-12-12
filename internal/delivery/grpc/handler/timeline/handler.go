@@ -12,6 +12,7 @@ import (
 
 	"github.com/Karzoug/meower-timeline-service/internal/delivery/grpc/converter"
 	"github.com/Karzoug/meower-timeline-service/internal/timeline/service"
+	"github.com/Karzoug/meower-timeline-service/internal/timeline/service/option"
 	gen "github.com/Karzoug/meower-timeline-service/pkg/proto/grpc/timeline/v1"
 )
 
@@ -34,20 +35,39 @@ func (h handlers) ListTimeline(ctx context.Context, req *gen.ListTimelineRequest
 		return nil, status.Error(codes.InvalidArgument, "empty request")
 	}
 
+	authUserID := auth.UserIDFromContext(ctx)
+
 	userID, err := xid.FromString(req.Parent)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid user id: "+req.Parent)
 	}
 
-	posts, err := h.timelineService.GetTimeline(ctx, auth.UserIDFromContext(ctx), userID, service.PaginationOptions{
-		Offset: int(req.PageOffset),
-		Limit:  int(req.PageSize),
-	})
+	if userID.Compare(authUserID) != 0 {
+		return nil, status.Error(codes.PermissionDenied, "permission denied")
+	}
+
+	opt := option.Pagination{
+		Size: int(req.PageSize),
+	}
+	switch t := req.ByOneof.(type) {
+	case *gen.ListTimelineRequest_PrevPageToken:
+		opt = option.Pagination{
+			PrevToken: t.PrevPageToken,
+		}
+	case *gen.ListTimelineRequest_NextPageToken:
+		opt = option.Pagination{
+			NextToken: t.NextPageToken,
+		}
+	}
+
+	res, err := h.timelineService.GetTimeline(ctx, authUserID, opt)
 	if err != nil {
 		return nil, err
 	}
 
 	return &gen.ListTimelineResponse{
-		Posts: converter.ToProtoPosts(posts),
+		Posts:         converter.ToProtoPosts(res.Posts),
+		NextPageToken: res.NextToken,
+		PrevPageToken: res.PrevToken,
 	}, nil
 }

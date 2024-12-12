@@ -93,7 +93,7 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 	}
 
 	// set up service
-	ts, err := service.NewTimelineService(cfg.Service, repo.NewTimelineRepo(redisDB, logger), relationClient, postClient, ctx.Done(), tracer, logger)
+	ts, err := service.NewTimelineService(cfg.Service, repo.NewTimelineRepo(redisDB, logger), relationClient, postClient, ctx.Done(), logger)
 	if err != nil {
 		return err
 	}

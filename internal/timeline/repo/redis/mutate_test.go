@@ -60,7 +60,7 @@ func Test_repo_ExistedListDeletePost(t *testing.T) {
 	err = r.ExistedListDeletePost(ctx, userID, post1)
 	require.NoError(t, err)
 
-	resp, err := r.ListGet(ctx, userID, 0, 10, nil)
+	resp, _, err := r.ListGetOlder(ctx, userID, nil, 10, nil)
 	require.NoError(t, err)
 
 	assert.Len(t, resp, 1)

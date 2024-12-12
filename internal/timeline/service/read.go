@@ -9,67 +9,134 @@ import (
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 
+	"github.com/Karzoug/meower-common-go/trace/otlp"
 	"github.com/Karzoug/meower-common-go/ucerr"
 	"github.com/rs/xid"
 
 	"github.com/Karzoug/meower-timeline-service/internal/timeline/entity"
 	repoerr "github.com/Karzoug/meower-timeline-service/internal/timeline/repo"
+	"github.com/Karzoug/meower-timeline-service/internal/timeline/service/option"
+	"github.com/Karzoug/meower-timeline-service/internal/timeline/service/result"
 )
 
 const preffixSpanName = "TimelineService.Service/"
 
-func (ts TimelineService) GetTimeline(ctx context.Context, reqUserID, userID xid.ID, pgn PaginationOptions) ([]entity.Post, error) {
-	ctx, span := ts.tracer.Start(ctx, preffixSpanName+"GetTimeline")
+func (ts TimelineService) GetTimeline(ctx context.Context, authUserID xid.ID, pgn option.Pagination) (result.ListPost, error) {
+	ctx, span := otlp.AddSpan(ctx, preffixSpanName+"GetTimeline")
 	defer span.End()
 
-	if pgn.Offset < 0 {
-		return nil, ucerr.NewError(
-			nil,
-			"invalid pagination parameter: negative offset",
-			codes.InvalidArgument,
-		)
-	}
-
-	if pgn.Limit < 0 {
-		return nil, ucerr.NewError(
+	if pgn.Size < 0 {
+		return result.ListPost{}, ucerr.NewError(
 			nil,
 			"invalid pagination parameter: negative size",
 			codes.InvalidArgument,
 		)
 	}
-	if pgn.Limit == 0 {
-		pgn.Limit = 100
-	} else if pgn.Limit > 100 {
-		pgn.Limit = 100
+	if pgn.Size == 0 {
+		pgn.Size = 100
+	} else if pgn.Size > 100 {
+		pgn.Size = 100
 	}
 
-	if reqUserID.Compare(userID) != 0 {
-		return nil, ucerr.NewError(nil, "user id mismatch", codes.PermissionDenied)
-	}
-	if pgn.Offset >= ts.cfg.Limit {
-		return nil, ucerr.NewError(nil, "end of timeline", codes.OutOfRange)
-	}
-	if pgn.Offset+pgn.Limit > ts.cfg.Limit {
-		pgn.Limit = ts.cfg.Limit - pgn.Offset
+	var err error
+	if pgn.PrevToken != "" {
+		token, err := entity.FromString(pgn.PrevToken)
+		if err != nil {
+			return result.ListPost{}, ucerr.NewError(
+				err,
+				"invalid pagination parameter: previous token",
+				codes.InvalidArgument,
+			)
+		}
+
+		var (
+			res       []entity.Post
+			nextToken *entity.Post
+		)
+		res, nextToken, err = ts.repo.ListGetNewer(ctx, authUserID, token, pgn.Size, &ts.cfg.TTL)
+		if nil == err {
+			res := result.ListPost{
+				Posts:     res,
+				NextToken: pgn.PrevToken,
+			}
+			if nextToken != nil {
+				res.PrevToken = nextToken.String()
+			}
+			return res, nil
+		}
+
+		if errors.Is(err, repoerr.ErrValueNotFound) {
+			return result.ListPost{}, ucerr.NewError(
+				err,
+				"invalid pagination token",
+				codes.InvalidArgument,
+			)
+		}
+
+		return result.ListPost{}, ucerr.NewError(
+			err,
+			"failed to get timeline",
+			codes.Internal,
+		)
 	}
 
-	res, err := ts.repo.ListGet(ctx, userID, pgn.Offset, pgn.Limit, &ts.cfg.TTL)
+	var token *entity.Post
+	if pgn.NextToken != "" {
+		t, err := entity.FromString(pgn.NextToken)
+		if err != nil {
+			return result.ListPost{}, ucerr.NewError(
+				err,
+				"invalid pagination parameter: next token",
+				codes.InvalidArgument,
+			)
+		}
+		token = &t
+	}
+
+	res, nextToken, err := ts.repo.ListGetOlder(ctx, authUserID, token, pgn.Size, &ts.cfg.TTL)
 	if nil == err {
+		res := result.ListPost{
+			Posts:     res,
+			PrevToken: pgn.NextToken,
+		}
+		if nextToken != nil {
+			res.NextToken = nextToken.String()
+		}
 		return res, nil
 	}
-	if errors.Is(err, repoerr.ErrNotFound) {
+
+	if errors.Is(err, repoerr.ErrValueNotFound) {
+		return result.ListPost{}, ucerr.NewError(
+			err,
+			"invalid pagination token",
+			codes.InvalidArgument,
+		)
+	}
+
+	if errors.Is(err, repoerr.ErrKeyNotFound) {
 		// not found timeline in cache -> build it from scratch
 		span.AddEvent("timeline not found in cache")
-		return ts.getTimelineFromScratch(userID)
+		posts, err := ts.getTimelineFromScratch(authUserID)
+		if err != nil {
+			return result.ListPost{}, err
+		}
+
+		if pgn.NextToken != "" || pgn.PrevToken != "" {
+			return result.ListPost{
+					Posts: posts[0:pgn.Size],
+				},
+				ucerr.NewError(nil, "token is expired, returned only first page of timeline", codes.FailedPrecondition)
+		}
+		return result.ListPost{Posts: posts}, nil
 	}
 
 	switch {
 	case errors.Is(err, context.Canceled):
-		return nil, ucerr.NewError(err, "request canceled", codes.Canceled)
+		return result.ListPost{}, ucerr.NewError(err, "request canceled", codes.Canceled)
 	case errors.Is(err, context.DeadlineExceeded):
-		return nil, ucerr.NewError(err, "request timeout", codes.DeadlineExceeded)
+		return result.ListPost{}, ucerr.NewError(err, "request timeout", codes.DeadlineExceeded)
 	default:
-		return nil, ucerr.NewInternalError(err)
+		return result.ListPost{}, ucerr.NewInternalError(err)
 	}
 }
 
@@ -77,7 +144,7 @@ func (ts TimelineService) getTimelineFromScratch(userID xid.ID) ([]entity.Post, 
 	ctx, cancel := context.WithTimeout(ts.shutdownCtx, ts.cfg.BuildTimeout)
 	defer cancel()
 
-	ctx, span := ts.tracer.Start(ctx, preffixSpanName+"BuildTimelineFromScratch")
+	ctx, span := otlp.AddSpan(ctx, preffixSpanName+"BuildTimelineFromScratch")
 	defer span.End()
 
 	res := ts.buildTimelineFromScratch(ctx, userID)

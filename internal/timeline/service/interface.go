@@ -10,8 +10,10 @@ import (
 )
 
 type repo interface {
-	// ListGet returns timeline list from cache.
-	ListGet(ctx context.Context, userID xid.ID, offset, limit int, ttl *time.Duration) ([]entity.Post, error)
+	// ListGet returns timeline list from cache newer than token.
+	ListGetNewer(ctx context.Context, userID xid.ID, token entity.Post, limit int, ttl *time.Duration) ([]entity.Post, *entity.Post, error)
+	// ListGet returns timeline list from cache older than token.
+	ListGetOlder(ctx context.Context, userID xid.ID, token *entity.Post, limit int, ttl *time.Duration) ([]entity.Post, *entity.Post, error)
 	// ExistedListPush push timeline record to existed timeline list or do nothing if timeline list does not exist.
 	ExistedListPushPost(ctx context.Context, userID xid.ID, post entity.Post, limit int64) error
 	// ListSet set timeline list to cache (new records must be at the end).
@@ -27,5 +29,5 @@ type relationService interface {
 }
 
 type postService interface {
-	ListPostIDsByUserIDs(ctx context.Context, reqUserID xid.ID, userIDs []xid.ID, limit int) ([]entity.Post, error)
+	ListPostIDsByUserIDs(ctx context.Context, authUserID xid.ID, userIDs []xid.ID, limit int) ([]entity.Post, error)
 }

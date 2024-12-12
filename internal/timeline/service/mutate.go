@@ -37,9 +37,9 @@ func (ts TimelineService) DeleteTimeline(ctx context.Context, userID xid.ID) err
 }
 
 func (ts TimelineService) SubscribeOnUser(ctx context.Context, userID, targetUserID xid.ID) error {
-	posts, err := ts.repo.ListGet(ctx, userID, 0, ts.cfg.Limit, nil)
+	posts, _, err := ts.repo.ListGetOlder(ctx, userID, nil, ts.cfg.Limit, nil)
 	if err != nil {
-		if errors.Is(err, repoerr.ErrNotFound) {
+		if errors.Is(err, repoerr.ErrKeyNotFound) {
 			return nil
 		}
 		return ucerr.NewInternalError(err)
@@ -81,9 +81,9 @@ func (ts TimelineService) SubscribeOnUser(ctx context.Context, userID, targetUse
 }
 
 func (ts TimelineService) UnsubscribeFromUser(ctx context.Context, userID, targetUserID xid.ID) error {
-	posts, err := ts.repo.ListGet(ctx, userID, 0, ts.cfg.Limit, nil)
+	posts, _, err := ts.repo.ListGetOlder(ctx, userID, nil, ts.cfg.Limit, nil)
 	if err != nil {
-		if errors.Is(err, repoerr.ErrNotFound) {
+		if errors.Is(err, repoerr.ErrKeyNotFound) || errors.Is(err, repoerr.ErrValueNotFound) {
 			return nil
 		}
 		return ucerr.NewInternalError(err)
