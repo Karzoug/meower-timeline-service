@@ -25,7 +25,7 @@ func (r repo) ExistedListPushPost(ctx context.Context, userID xid.ID, record ent
 func (r repo) ListSet(ctx context.Context, userID xid.ID, records []entity.Post, ttl time.Duration) error {
 	pipe := r.db.Pipeline()
 
-	pipe.LTrim(ctx, userID.String(), 0, 0)
+	pipe.LTrim(ctx, userID.String(), 1, 0)
 	pipe.LPush(ctx, userID.String(), emptyPost)
 
 	// TODO: perf: rewrite it for batch insert
